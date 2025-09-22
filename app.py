@@ -1,3 +1,4 @@
+import os
 from flask import Flask, request, render_template_string, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 import uuid
@@ -7,10 +8,12 @@ import base64
 
 app = Flask(__name__)
 
-# Configure PostgreSQL database (update URI after Render setup)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://user:password@host:port/dbname'
+import os
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
+app = Flask(__name__)
+
 
 # Database models
 class Poll(db.Model):
