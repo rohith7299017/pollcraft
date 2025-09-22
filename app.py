@@ -6,7 +6,7 @@ import uuid
 import matplotlib.pyplot as plt
 import io
 import base64
-from datetime import datetime, timedelta  # New import for expiration
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
@@ -24,11 +24,11 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Database models (updated with expiration)
+# Database models
 class Poll(db.Model):
     id = db.Column(db.String(8), primary_key=True)
     question = db.Column(db.String(200), nullable=False)
-    expiration_datetime = db.Column(db.DateTime, nullable=True)  # New field for expiration
+    expiration_datetime = db.Column(db.DateTime, nullable=True)
     options = db.relationship('Option', backref='poll', lazy=True)
 
 class Option(db.Model):
@@ -43,7 +43,7 @@ class Vote(db.Model):
     option_id = db.Column(db.Integer, db.ForeignKey('option.id'), nullable=False)
     voter_ip = db.Column(db.String(45), nullable=False)
 
-# HTML templates (updated home with delete links)
+# HTML templates
 HOME_TEMPLATE = '''
 <!doctype html>
 <html>
@@ -240,7 +240,6 @@ def vote(poll_id):
     poll = Poll.query.get_or_404(poll_id)
     if poll.expiration_datetime and poll.expiration_datetime < datetime.utcnow():
         return "This poll has expired!", 403
-    # Rest of the vote logic remains the same
     options = poll.options
     client_ip = request.remote_addr
     if Vote.query.filter_by(poll_id=poll_id, voter_ip=client_ip).first():
@@ -260,7 +259,6 @@ def results(poll_id):
     poll = Poll.query.get_or_404(poll_id)
     if poll.expiration_datetime and poll.expiration_datetime < datetime.utcnow():
         return "This poll has expired!", 403
-    # Rest of the results logic remains the same
     options = poll.options
     total_votes = sum(len(opt.votes) for opt in options)
     plt.figure(figsize=(6, 4))
