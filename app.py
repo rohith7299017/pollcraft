@@ -1,39 +1,34 @@
 import os
+from urllib.parse import urlparse, urlunparse
 from flask import Flask, request, render_template_string, redirect, url_for
 from flask_sqlalchemy import SQLAlchemy
 import uuid
 import matplotlib.pyplot as plt
 import io
 import base64
-from urllib.parse import urlparse, urlunparse
+from datetime import datetime, timedelta  # New import for expiration
 
 app = Flask(__name__)
-
 
 # Configure PostgreSQL database
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
-    # Handle Render's possible 'postgres://' scheme by normalizing to 'postgresql://'
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    
-    # Parse the URL and modify the scheme to use psycopg dialect
     parsed_url = urlparse(database_url)
     new_scheme = 'postgresql+psycopg'
     modified_url = urlunparse((new_scheme, parsed_url.netloc, parsed_url.path, parsed_url.params, parsed_url.query, parsed_url.fragment))
-    
     app.config['SQLALCHEMY_DATABASE_URI'] = modified_url
 else:
-    # Fallback for local development (update with your local URI)
     app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://localhost:5432/polls_db'
-
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Database models
+# Database models (updated with expiration)
 class Poll(db.Model):
     id = db.Column(db.String(8), primary_key=True)
     question = db.Column(db.String(200), nullable=False)
+    expiration_datetime = db.Column(db.DateTime, nullable=True)  # New field for expiration
     options = db.relationship('Option', backref='poll', lazy=True)
 
 class Option(db.Model):
@@ -46,9 +41,9 @@ class Vote(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     poll_id = db.Column(db.String(8), db.ForeignKey('poll.id'), nullable=False)
     option_id = db.Column(db.Integer, db.ForeignKey('option.id'), nullable=False)
-    voter_ip = db.Column(db.String(45), nullable=False)  # Supports IPv4/IPv6
+    voter_ip = db.Column(db.String(45), nullable=False)
 
-# HTML templates with Tailwind CSS
+# HTML templates (updated home with delete links)
 HOME_TEMPLATE = '''
 <!doctype html>
 <html>
@@ -71,9 +66,11 @@ HOME_TEMPLATE = '''
         {% for poll in polls %}
           <div class="bg-white p-4 rounded-lg shadow-md">
             <h3 class="text-lg font-medium mb-2">{{ poll.question }}</h3>
+            <p class="text-sm text-gray-500">Expires: {% if poll.expiration_datetime %}{{ poll.expiration_datetime }} {% else %}Never{% endif %}</p>
             <div class="space-y-2">
               <a href="/poll/{{ poll.id }}" class="block text-blue-600 hover:underline">Vote</a>
               <a href="/results/{{ poll.id }}" class="block text-blue-600 hover:underline">View Results</a>
+              <a href="/delete/{{ poll.id }}" class="block text-red-600 hover:underline" onclick="return confirm('Are you sure you want to delete this poll?');">Delete</a>
             </div>
           </div>
         {% endfor %}
@@ -118,6 +115,10 @@ CREATE_TEMPLATE = '''
           <input name="options" required class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50" placeholder="Option 2">
           <input name="options" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50" placeholder="Option 3 (optional)">
           <input name="options" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50" placeholder="Option 4 (optional)">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-gray-700">Expiration (days from now, optional)</label>
+          <input name="expiration_days" type="number" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50" placeholder="e.g., 7 for 7 days">
         </div>
         <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition">Create Poll</button>
       </form>
@@ -202,7 +203,8 @@ with app.app_context():
 
 @app.route('/', methods=['GET'])
 def home():
-    polls = Poll.query.all()
+    # Filter out expired polls
+    polls = Poll.query.filter((Poll.expiration_datetime.is_(None)) | (Poll.expiration_datetime > datetime.utcnow())).all()
     return render_template_string(HOME_TEMPLATE, polls=polls)
 
 @app.route('/create', methods=['GET', 'POST'])
@@ -212,8 +214,12 @@ def create_poll():
         options = [opt for opt in request.form.getlist('options') if opt.strip()]
         if len(options) < 2:
             return render_template_string(CREATE_TEMPLATE, error="Need at least 2 options!")
+        expiration_days = request.form.get('expiration_days')
+        expiration = None
+        if expiration_days and int(expiration_days) > 0:
+            expiration = datetime.utcnow() + timedelta(days=int(expiration_days))
         poll_id = str(uuid.uuid4())[:8]
-        poll = Poll(id=poll_id, question=question)
+        poll = Poll(id=poll_id, question=question, expiration_datetime=expiration)
         db.session.add(poll)
         for opt_text in options:
             option = Option(text=opt_text, poll_id=poll_id)
@@ -222,9 +228,19 @@ def create_poll():
         return redirect(url_for('vote', poll_id=poll_id))
     return render_template_string(CREATE_TEMPLATE)
 
+@app.route('/delete/<poll_id>', methods=['GET'])
+def delete(poll_id):
+    poll = Poll.query.get_or_404(poll_id)
+    db.session.delete(poll)
+    db.session.commit()
+    return redirect(url_for('home'))
+
 @app.route('/poll/<poll_id>', methods=['GET', 'POST'])
 def vote(poll_id):
     poll = Poll.query.get_or_404(poll_id)
+    if poll.expiration_datetime and poll.expiration_datetime < datetime.utcnow():
+        return "This poll has expired!", 403
+    # Rest of the vote logic remains the same
     options = poll.options
     client_ip = request.remote_addr
     if Vote.query.filter_by(poll_id=poll_id, voter_ip=client_ip).first():
@@ -242,10 +258,11 @@ def vote(poll_id):
 @app.route('/results/<poll_id>')
 def results(poll_id):
     poll = Poll.query.get_or_404(poll_id)
+    if poll.expiration_datetime and poll.expiration_datetime < datetime.utcnow():
+        return "This poll has expired!", 403
+    # Rest of the results logic remains the same
     options = poll.options
     total_votes = sum(len(opt.votes) for opt in options)
-
-    # Generate chart
     plt.figure(figsize=(6, 4))
     plt.bar([opt.text for opt in options], [len(opt.votes) for opt in options], color='#2563eb')
     plt.title(poll.question, fontsize=12, pad=10)
@@ -257,7 +274,6 @@ def results(poll_id):
     img.seek(0)
     chart_url = base64.b64encode(img.getvalue()).decode()
     plt.close()
-
     return render_template_string(RESULTS_TEMPLATE, question=poll.question, total_votes=total_votes, chart=chart_url, options=options, poll_id=poll_id)
 
 if __name__ == '__main__':
