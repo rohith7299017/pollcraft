@@ -5,15 +5,30 @@ import uuid
 import matplotlib.pyplot as plt
 import io
 import base64
+from urllib.parse import urlparse, urlunparse
 
 app = Flask(__name__)
 
-import os
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL')
+
+# Configure PostgreSQL database
+database_url = os.environ.get('DATABASE_URL')
+if database_url:
+    # Handle Render's possible 'postgres://' scheme by normalizing to 'postgresql://'
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    
+    # Parse the URL and modify the scheme to use psycopg dialect
+    parsed_url = urlparse(database_url)
+    new_scheme = 'postgresql+psycopg'
+    modified_url = urlunparse((new_scheme, parsed_url.netloc, parsed_url.path, parsed_url.params, parsed_url.query, parsed_url.fragment))
+    
+    app.config['SQLALCHEMY_DATABASE_URI'] = modified_url
+else:
+    # Fallback for local development (update with your local URI)
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://localhost:5432/polls_db'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
-app = Flask(__name__)
-
 
 # Database models
 class Poll(db.Model):
