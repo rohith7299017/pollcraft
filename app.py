@@ -37,7 +37,7 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(120), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)  # ← Changed from 120 to 255
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -69,17 +69,18 @@ class Vote(db.Model):
     option_id = db.Column(db.Integer, db.ForeignKey('option.id'), nullable=False)
     voter_ip = db.Column(db.String(45), nullable=False)
 
-# Updated templates with login-aware navbar
-def get_navbar(is_logged_in=False):
+# Updated navbar function (takes username for logged-in case)
+def get_navbar(is_logged_in=False, username=None):
     if is_logged_in:
-        return '''
+        logout_link = f'Logout ({username})' if username else 'Logout'
+        return f'''
     <nav class="bg-blue-600 text-white p-4">
       <div class="container mx-auto flex justify-between items-center">
         <h1 class="text-xl font-bold">Simple Polls</h1>
         <div class="space-x-4">
           <a href="/" class="hover:underline">Home</a>
           <a href="/create" class="hover:underline">Create Poll</a>
-          <a href="/logout" class="hover:underline">Logout ({{ current_user.username }})</a>
+          <a href="/logout" class="hover:underline">{logout_link}</a>
         </div>
       </div>
     </nav>
@@ -331,12 +332,13 @@ with app.app_context():
 @app.route('/', methods=['GET'])
 def home():
     polls = Poll.query.filter((Poll.expiration_datetime.is_(None)) | (Poll.expiration_datetime > datetime.utcnow())).all()
-    navbar = get_navbar(current_user.is_authenticated)
+    username = current_user.username if current_user.is_authenticated else None
+    navbar = get_navbar(current_user.is_authenticated, username)
     return render_template_string(HOME_TEMPLATE, polls=polls, navbar=navbar)
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
-    navbar = get_navbar(False)
+    navbar = get_navbar(False)  # No username needed
     if request.method == 'POST':
         username = request.form['username']
         email = request.form['email']
@@ -354,7 +356,7 @@ def signup():
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    navbar = get_navbar(False)
+    navbar = get_navbar(False)  # No username needed
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
@@ -376,7 +378,7 @@ def logout():
 @app.route('/create', methods=['GET', 'POST'])
 @login_required
 def create_poll():
-    navbar = get_navbar(True)
+    navbar = get_navbar(True, current_user.username)
     if request.method == 'POST':
         question = request.form['question']
         options = [opt for opt in request.form.getlist('options') if opt.strip()]
@@ -417,7 +419,7 @@ def vote(poll_id):
         flash('This poll has expired!')
         return redirect(url_for('home'))
     options = poll.options
-    navbar = get_navbar(current_user.is_authenticated)
+    navbar = get_navbar(current_user.is_authenticated, current_user.username if current_user.is_authenticated else None)
     client_ip = request.remote_addr
     if Vote.query.filter_by(poll_id=poll_id, voter_ip=client_ip).first():
         return render_template_string(VOTE_TEMPLATE, question=poll.question, options=options, poll_id=poll_id, error="You already voted!", navbar=navbar)
@@ -438,7 +440,7 @@ def results(poll_id):
         flash('This poll has expired!')
         return redirect(url_for('home'))
     options = poll.options
-    navbar = get_navbar(current_user.is_authenticated)
+    navbar = get_navbar(current_user.is_authenticated, current_user.username if current_user.is_authenticated else None)
     total_votes = sum(len(opt.votes) for opt in options)
     plt.figure(figsize=(6, 4))
     plt.bar([opt.text for opt in options], [len(opt.votes) for opt in options], color='#2563eb')
