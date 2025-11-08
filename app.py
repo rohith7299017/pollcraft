@@ -38,11 +38,11 @@ class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)  # ← Fixed: 255 for scrypt
-
+    password_hash = db.Column(db.String(255), nullable=False)
+    
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
-
+    
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
@@ -69,28 +69,6 @@ class Vote(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
-# Navbar Template (Jinja)
-NAVBAR_TEMPLATE = '''
-<nav class="bg-blue-600 text-white p-4">
-  <div class="container mx-auto flex justify-between items-center">
-    <h1 class="text-xl font-bold">Simple Polls</h1>
-    <div class="space-x-4">
-      <a href="/" class="hover:underline">Home</a>
-      {% if current_user.is_authenticated %}
-        <a href="/create" class="hover:underline">Create Poll</a>
-        <a href="/logout" class="hover:underline">Logout ({{ current_user.username }})</a>
-      {% else %}
-        <a href="/login" class="hover:underline">Login</a>
-        <a href="/signup" class="hover:underline">Signup</a>
-      {% endif %}
-    </div>
-  </div>
-</nav>
-'''
-
-def render_navbar():
-    return render_template_string(NAVBAR_TEMPLATE)
-
 # HTML Templates
 HOME_TEMPLATE = '''
 <!doctype html>
@@ -101,7 +79,22 @@ HOME_TEMPLATE = '''
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col">
-  {{ navbar }}
+  <nav class="bg-blue-600 text-white p-4">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold">Simple Polls</h1>
+      <div class="space-x-4">
+        <a href="/" class="hover:underline">Home</a>
+        {% if current_user.is_authenticated %}
+          <a href="/create" class="hover:underline">Create Poll</a>
+          <a href="/logout" class="hover:underline">Logout ({{ current_user.username }})</a>
+        {% else %}
+          <a href="/login" class="hover:underline">Login</a>
+          <a href="/signup" class="hover:underline">Signup</a>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
+  
   <div class="container mx-auto p-4 flex-grow">
     <h2 class="text-2xl font-semibold mb-4 text-center">Active Polls</h2>
     {% with messages = get_flashed_messages() %}
@@ -150,7 +143,22 @@ CREATE_TEMPLATE = '''
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col">
-  {{ navbar }}
+  <nav class="bg-blue-600 text-white p-4">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold">Simple Polls</h1>
+      <div class="space-x-4">
+        <a href="/" class="hover:underline">Home</a>
+        {% if current_user.is_authenticated %}
+          <a href="/create" class="hover:underline">Create Poll</a>
+          <a href="/logout" class="hover:underline">Logout ({{ current_user.username }})</a>
+        {% else %}
+          <a href="/login" class="hover:underline">Login</a>
+          <a href="/signup" class="hover:underline">Signup</a>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
+  
   <div class="container mx-auto p-4 flex-grow flex items-center justify-center">
     <div class="bg-white p-6 rounded-lg shadow-md w-full max-w-md">
       <h2 class="text-2xl font-semibold mb-4 text-center">Create a Poll</h2>
@@ -194,7 +202,22 @@ SIGNUP_TEMPLATE = '''
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col">
-  {{ navbar }}
+  <nav class="bg-blue-600 text-white p-4">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold">Simple Polls</h1>
+      <div class="space-x-4">
+        <a href="/" class="hover:underline">Home</a>
+        {% if current_user.is_authenticated %}
+          <a href="/create" class="hover:underline">Create Poll</a>
+          <a href="/logout" class="hover:underline">Logout ({{ current_user.username }})</a>
+        {% else %}
+          <a href="/login" class="hover:underline">Login</a>
+          <a href="/signup" class="hover:underline">Signup</a>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
+  
   <div class="container mx-auto p-4 flex-grow flex items-center justify-center">
     <div class="bg-white p-6 rounded-lg shadow-md w-full max-w-md">
       <h2 class="text-2xl font-semibold mb-4 text-center">Signup</h2>
@@ -236,7 +259,22 @@ LOGIN_TEMPLATE = '''
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col">
-  {{ navbar }}
+  <nav class="bg-blue-600 text-white p-4">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold">Simple Polls</h1>
+      <div class="space-x-4">
+        <a href="/" class="hover:underline">Home</a>
+        {% if current_user.is_authenticated %}
+          <a href="/create" class="hover:underline">Create Poll</a>
+          <a href="/logout" class="hover:underline">Logout ({{ current_user.username }})</a>
+        {% else %}
+          <a href="/login" class="hover:underline">Login</a>
+          <a href="/signup" class="hover:underline">Signup</a>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
+  
   <div class="container mx-auto p-4 flex-grow flex items-center justify-center">
     <div class="bg-white p-6 rounded-lg shadow-md w-full max-w-md">
       <h2 class="text-2xl font-semibold mb-4 text-center">Login</h2>
@@ -274,7 +312,22 @@ VOTE_TEMPLATE = '''
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col">
-  {{ navbar }}
+  <nav class="bg-blue-600 text-white p-4">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold">Simple Polls</h1>
+      <div class="space-x-4">
+        <a href="/" class="hover:underline">Home</a>
+        {% if current_user.is_authenticated %}
+          <a href="/create" class="hover:underline">Create Poll</a>
+          <a href="/logout" class="hover:underline">Logout ({{ current_user.username }})</a>
+        {% else %}
+          <a href="/login" class="hover:underline">Login</a>
+          <a href="/signup" class="hover:underline">Signup</a>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
+  
   <div class="container mx-auto p-4 flex-grow flex items-center justify-center">
     <div class="bg-white p-6 rounded-lg shadow-md w-full max-w-md">
       <h2 class="text-2xl font-semibold mb-4">{{ question }}</h2>
@@ -306,7 +359,22 @@ RESULTS_TEMPLATE = '''
   <script src="https://cdn.tailwindcss.com"></script>
 </head>
 <body class="bg-gray-100 min-h-screen flex flex-col">
-  {{ navbar }}
+  <nav class="bg-blue-600 text-white p-4">
+    <div class="container mx-auto flex justify-between items-center">
+      <h1 class="text-xl font-bold">Simple Polls</h1>
+      <div class="space-x-4">
+        <a href="/" class="hover:underline">Home</a>
+        {% if current_user.is_authenticated %}
+          <a href="/create" class="hover:underline">Create Poll</a>
+          <a href="/logout" class="hover:underline">Logout ({{ current_user.username }})</a>
+        {% else %}
+          <a href="/login" class="hover:underline">Login</a>
+          <a href="/signup" class="hover:underline">Signup</a>
+        {% endif %}
+      </div>
+    </div>
+  </nav>
+  
   <div class="container mx-auto p-4 flex-grow flex items-center justify-center">
     <div class="bg-white p-6 rounded-lg shadow-md w-full max-w-lg">
       <h2 class="text-2xl font-semibold mb-4">{{ question }}</h2>
@@ -335,7 +403,7 @@ def home():
         (Poll.expiration_datetime.is_(None)) |
         (Poll.expiration_datetime > datetime.utcnow())
     ).all()
-    return render_template_string(HOME_TEMPLATE, polls=polls, navbar=render_navbar())
+    return render_template_string(HOME_TEMPLATE, polls=polls)
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
@@ -345,14 +413,14 @@ def signup():
         password = request.form['password']
         if User.query.filter_by(username=username).first() or User.query.filter_by(email=email).first():
             flash('Username or email already exists!')
-            return render_template_string(SIGNUP_TEMPLATE, navbar=render_navbar())
+            return render_template_string(SIGNUP_TEMPLATE)
         user = User(username=username, email=email)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
         flash('Account created! Please log in.')
         return redirect(url_for('login'))
-    return render_template_string(SIGNUP_TEMPLATE, navbar=render_navbar())
+    return render_template_string(SIGNUP_TEMPLATE)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -365,7 +433,7 @@ def login():
             flash('Logged in successfully!')
             return redirect(url_for('home'))
         flash('Invalid email or password!')
-    return render_template_string(LOGIN_TEMPLATE, navbar=render_navbar())
+    return render_template_string(LOGIN_TEMPLATE)
 
 @app.route('/logout')
 @login_required
@@ -382,7 +450,7 @@ def create_poll():
         options = [opt for opt in request.form.getlist('options') if opt.strip()]
         if len(options) < 2:
             flash('Need at least 2 options!')
-            return render_template_string(CREATE_TEMPLATE, navbar=render_navbar())
+            return render_template_string(CREATE_TEMPLATE)
         expiration_days = request.form.get('expiration_days')
         expiration = None
         if expiration_days and int(expiration_days) > 0:
@@ -396,7 +464,7 @@ def create_poll():
         db.session.commit()
         flash('Poll created!')
         return redirect(url_for('vote', poll_id=poll_id))
-    return render_template_string(CREATE_TEMPLATE, navbar=render_navbar())
+    return render_template_string(CREATE_TEMPLATE)
 
 @app.route('/delete/<poll_id>', methods=['GET'])
 @login_required
@@ -419,7 +487,7 @@ def vote(poll_id):
     options = poll.options
     client_ip = request.remote_addr
     if Vote.query.filter_by(poll_id=poll_id, voter_ip=client_ip).first():
-        return render_template_string(VOTE_TEMPLATE, question=poll.question, options=options, poll_id=poll_id, error="You already voted!", navbar=render_navbar())
+        return render_template_string(VOTE_TEMPLATE, question=poll.question, options=options, poll_id=poll_id, error="You already voted!")
     if request.method == 'POST':
         option_id = request.form['vote']
         option = Option.query.get_or_404(option_id)
@@ -428,7 +496,7 @@ def vote(poll_id):
             db.session.add(vote)
             db.session.commit()
         return redirect(url_for('results', poll_id=poll_id))
-    return render_template_string(VOTE_TEMPLATE, question=poll.question, options=options, poll_id=poll_id, navbar=render_navbar())
+    return render_template_string(VOTE_TEMPLATE, question=poll.question, options=options, poll_id=poll_id)
 
 @app.route('/results/<poll_id>')
 def results(poll_id):
@@ -449,7 +517,7 @@ def results(poll_id):
     img.seek(0)
     chart_url = base64.b64encode(img.getvalue()).decode()
     plt.close()
-    return render_template_string(RESULTS_TEMPLATE, question=poll.question, total_votes=total_votes, chart=chart_url, options=options, poll_id=poll_id, navbar=render_navbar())
+    return render_template_string(RESULTS_TEMPLATE, question=poll.question, total_votes=total_votes, chart=chart_url, options=options, poll_id=poll_id)
 
 if __name__ == '__main__':
     app.run(debug=True)
