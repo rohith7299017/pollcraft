@@ -57,7 +57,7 @@ class Option(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     text = db.Column(db.String(100), nullable=False)
     poll_id = db.Column(db.String(8), db.ForeignKey('poll.id'), nullable=False)
-    votes = db.relationship('Vote', backref='option', lazy=True)
+    votes = db.relationship('Vote', backref='option', lazy=True, cascade='all, delete-orphan')
 
 class Vote(db.Model):
     id = db.Column(db.Integer, primary_key=True)
