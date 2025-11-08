@@ -11,33 +11,34 @@ import base64
 from datetime import datetime, timedelta
 
 app = Flask(__name__)
-app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')  # Set SECRET_KEY in Render env vars for production
+app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
 
-# Configure PostgreSQL database
+# Database: SQLite locally, PostgreSQL on Render
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
     if database_url.startswith('postgres://'):
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
     parsed_url = urlparse(database_url)
-    new_scheme = 'postgresql+psycopg'
-    modified_url = urlunparse((new_scheme, parsed_url.netloc, parsed_url.path, parsed_url.params, parsed_url.query, parsed_url.fragment))
+    modified_url = urlunparse(('postgresql+psycopg', parsed_url.netloc, parsed_url.path,
+                               parsed_url.params, parsed_url.query, parsed_url.fragment))
     app.config['SQLALCHEMY_DATABASE_URI'] = modified_url
 else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://localhost:5432/polls_db'
+    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///polls.db'
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
-# Flask-Login setup
+# Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
 login_manager.login_view = 'login'
 
-# User model
+# Models
 class User(UserMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
-    password_hash = db.Column(db.String(255), nullable=False)  # ← Changed from 120 to 255
+    password_hash = db.Column(db.String(255), nullable=False)  # ← Fixed: 255 for scrypt
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -45,17 +46,12 @@ class User(UserMixin, db.Model):
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
 
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
-# Other models (unchanged)
 class Poll(db.Model):
     id = db.Column(db.String(8), primary_key=True)
     question = db.Column(db.String(200), nullable=False)
     expiration_datetime = db.Column(db.DateTime, nullable=True)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)  # Link polls to users
-    options = db.relationship('Option', backref='poll', lazy=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    options = db.relationship('Option', backref='poll', lazy=True, cascade='all, delete-orphan')
 
 class Option(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -69,36 +65,33 @@ class Vote(db.Model):
     option_id = db.Column(db.Integer, db.ForeignKey('option.id'), nullable=False)
     voter_ip = db.Column(db.String(45), nullable=False)
 
-# Updated navbar function (takes username for logged-in case)
-def get_navbar(is_logged_in=False, username=None):
-    if is_logged_in:
-        logout_link = f'Logout ({username})' if username else 'Logout'
-        return f'''
-    <nav class="bg-blue-600 text-white p-4">
-      <div class="container mx-auto flex justify-between items-center">
-        <h1 class="text-xl font-bold">Simple Polls</h1>
-        <div class="space-x-4">
-          <a href="/" class="hover:underline">Home</a>
-          <a href="/create" class="hover:underline">Create Poll</a>
-          <a href="/logout" class="hover:underline">{logout_link}</a>
-        </div>
-      </div>
-    </nav>
-    '''
-    else:
-        return '''
-    <nav class="bg-blue-600 text-white p-4">
-      <div class="container mx-auto flex justify-between items-center">
-        <h1 class="text-xl font-bold">Simple Polls</h1>
-        <div class="space-x-4">
-          <a href="/" class="hover:underline">Home</a>
-          <a href="/login" class="hover:underline">Login</a>
-          <a href="/signup" class="hover:underline">Signup</a>
-        </div>
-      </div>
-    </nav>
-    '''
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
+# Navbar Template (Jinja)
+NAVBAR_TEMPLATE = '''
+<nav class="bg-blue-600 text-white p-4">
+  <div class="container mx-auto flex justify-between items-center">
+    <h1 class="text-xl font-bold">Simple Polls</h1>
+    <div class="space-x-4">
+      <a href="/" class="hover:underline">Home</a>
+      {% if current_user.is_authenticated %}
+        <a href="/create" class="hover:underline">Create Poll</a>
+        <a href="/logout" class="hover:underline">Logout ({{ current_user.username }})</a>
+      {% else %}
+        <a href="/login" class="hover:underline">Login</a>
+        <a href="/signup" class="hover:underline">Signup</a>
+      {% endif %}
+    </div>
+  </div>
+</nav>
+'''
+
+def render_navbar():
+    return render_template_string(NAVBAR_TEMPLATE)
+
+# HTML Templates
 HOME_TEMPLATE = '''
 <!doctype html>
 <html>
@@ -127,15 +120,21 @@ HOME_TEMPLATE = '''
             <div class="space-y-2">
               <a href="/poll/{{ poll.id }}" class="block text-blue-600 hover:underline">Vote</a>
               <a href="/results/{{ poll.id }}" class="block text-blue-600 hover:underline">View Results</a>
-              {% if current_user.is_authenticated %}
-              <a href="/delete/{{ poll.id }}" class="block text-red-600 hover:underline" onclick="return confirm('Are you sure you want to delete this poll?');">Delete</a>
+              {% if current_user.is_authenticated and poll.user_id == current_user.id %}
+                <a href="/delete/{{ poll.id }}" class="block text-red-600 hover:underline" onclick="return confirm('Delete this poll?');">Delete</a>
               {% endif %}
             </div>
           </div>
         {% endfor %}
       </div>
     {% else %}
-      <p class="text-center text-gray-600">No polls available. {% if not current_user.is_authenticated %}<a href="/create" class="text-blue-600 hover:underline">Create one! (Login first)</a>{% else %}<a href="/create" class="text-blue-600 hover:underline">Create one!</a>{% endif %}</p>
+      <p class="text-center text-gray-600">No polls available. 
+        {% if current_user.is_authenticated %}
+          <a href="/create" class="text-blue-600 hover:underline">Create one!</a>
+        {% else %}
+          <a href="/login" class="text-blue-600 hover:underline">Login to create</a>
+        {% endif %}
+      </p>
     {% endif %}
   </div>
 </body>
@@ -169,14 +168,14 @@ CREATE_TEMPLATE = '''
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Options (minimum 2)</label>
-          <input name="options" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50" placeholder="Option 1">
-          <input name="options" required class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50" placeholder="Option 2">
-          <input name="options" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50" placeholder="Option 3 (optional)">
-          <input name="options" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50" placeholder="Option 4 (optional)">
+          <input name="options" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" placeholder="Option 1">
+          <input name="options" required class="mt-2 block w-full rounded-md border-gray-300 shadow-sm" placeholder="Option 2">
+          <input name="options" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm" placeholder="Option 3 (optional)">
+          <input name="options" class="mt-2 block w-full rounded-md border-gray-300 shadow-sm" placeholder="Option 4 (optional)">
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Expiration (days from now, optional)</label>
-          <input name="expiration_days" type="number" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50" placeholder="e.g., 7 for 7 days">
+          <input name="expiration_days" type="number" min="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm" placeholder="e.g., 7">
         </div>
         <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition">Create Poll</button>
       </form>
@@ -209,15 +208,15 @@ SIGNUP_TEMPLATE = '''
       <form method="post" class="space-y-4">
         <div>
           <label class="block text-sm font-medium text-gray-700">Username</label>
-          <input name="username" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50">
+          <input name="username" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Email</label>
-          <input name="email" type="email" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50">
+          <input name="email" type="email" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Password</label>
-          <input name="password" type="password" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50">
+          <input name="password" type="password" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
         </div>
         <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition">Signup</button>
       </form>
@@ -251,11 +250,11 @@ LOGIN_TEMPLATE = '''
       <form method="post" class="space-y-4">
         <div>
           <label class="block text-sm font-medium text-gray-700">Email</label>
-          <input name="email" type="email" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50">
+          <input name="email" type="email" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
         </div>
         <div>
           <label class="block text-sm font-medium text-gray-700">Password</label>
-          <input name="password" type="password" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring focus:ring-blue-500 focus:ring-opacity-50">
+          <input name="password" type="password" required class="mt-1 block w-full rounded-md border-gray-300 shadow-sm">
         </div>
         <button type="submit" class="w-full bg-blue-600 text-white py-2 rounded-md hover:bg-blue-700 transition">Login</button>
       </form>
@@ -285,7 +284,7 @@ VOTE_TEMPLATE = '''
       <form method="post" class="space-y-4">
         {% for opt in options %}
           <div class="flex items-center">
-            <input type="radio" name="vote" value="{{ opt.id }}" required class="h-4 w-4 text-blue-600 focus:ring-blue-500 border-gray-300">
+            <input type="radio" name="vote" value="{{ opt.id }}" required class="h-4 w-4 text-blue-600">
             <label class="ml-2 text-gray-700">{{ opt.text }}</label>
           </div>
         {% endfor %}
@@ -325,38 +324,38 @@ RESULTS_TEMPLATE = '''
 </html>
 '''
 
-# Initialize database
+# Create tables
 with app.app_context():
     db.create_all()
 
+# Routes
 @app.route('/', methods=['GET'])
 def home():
-    polls = Poll.query.filter((Poll.expiration_datetime.is_(None)) | (Poll.expiration_datetime > datetime.utcnow())).all()
-    username = current_user.username if current_user.is_authenticated else None
-    navbar = get_navbar(current_user.is_authenticated, username)
-    return render_template_string(HOME_TEMPLATE, polls=polls, navbar=navbar)
+    polls = Poll.query.filter(
+        (Poll.expiration_datetime.is_(None)) |
+        (Poll.expiration_datetime > datetime.utcnow())
+    ).all()
+    return render_template_string(HOME_TEMPLATE, polls=polls, navbar=render_navbar())
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
-    navbar = get_navbar(False)  # No username needed
     if request.method == 'POST':
         username = request.form['username']
         email = request.form['email']
         password = request.form['password']
         if User.query.filter_by(username=username).first() or User.query.filter_by(email=email).first():
             flash('Username or email already exists!')
-            return render_template_string(SIGNUP_TEMPLATE, navbar=navbar)
+            return render_template_string(SIGNUP_TEMPLATE, navbar=render_navbar())
         user = User(username=username, email=email)
         user.set_password(password)
         db.session.add(user)
         db.session.commit()
         flash('Account created! Please log in.')
         return redirect(url_for('login'))
-    return render_template_string(SIGNUP_TEMPLATE, navbar=navbar)
+    return render_template_string(SIGNUP_TEMPLATE, navbar=render_navbar())
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    navbar = get_navbar(False)  # No username needed
     if request.method == 'POST':
         email = request.form['email']
         password = request.form['password']
@@ -366,7 +365,7 @@ def login():
             flash('Logged in successfully!')
             return redirect(url_for('home'))
         flash('Invalid email or password!')
-    return render_template_string(LOGIN_TEMPLATE, navbar=navbar)
+    return render_template_string(LOGIN_TEMPLATE, navbar=render_navbar())
 
 @app.route('/logout')
 @login_required
@@ -378,13 +377,12 @@ def logout():
 @app.route('/create', methods=['GET', 'POST'])
 @login_required
 def create_poll():
-    navbar = get_navbar(True, current_user.username)
     if request.method == 'POST':
         question = request.form['question']
         options = [opt for opt in request.form.getlist('options') if opt.strip()]
         if len(options) < 2:
             flash('Need at least 2 options!')
-            return render_template_string(CREATE_TEMPLATE, navbar=navbar)
+            return render_template_string(CREATE_TEMPLATE, navbar=render_navbar())
         expiration_days = request.form.get('expiration_days')
         expiration = None
         if expiration_days and int(expiration_days) > 0:
@@ -396,9 +394,9 @@ def create_poll():
             option = Option(text=opt_text, poll_id=poll_id)
             db.session.add(option)
         db.session.commit()
-        flash('Poll created successfully!')
+        flash('Poll created!')
         return redirect(url_for('vote', poll_id=poll_id))
-    return render_template_string(CREATE_TEMPLATE, navbar=navbar)
+    return render_template_string(CREATE_TEMPLATE, navbar=render_navbar())
 
 @app.route('/delete/<poll_id>', methods=['GET'])
 @login_required
@@ -419,10 +417,9 @@ def vote(poll_id):
         flash('This poll has expired!')
         return redirect(url_for('home'))
     options = poll.options
-    navbar = get_navbar(current_user.is_authenticated, current_user.username if current_user.is_authenticated else None)
     client_ip = request.remote_addr
     if Vote.query.filter_by(poll_id=poll_id, voter_ip=client_ip).first():
-        return render_template_string(VOTE_TEMPLATE, question=poll.question, options=options, poll_id=poll_id, error="You already voted!", navbar=navbar)
+        return render_template_string(VOTE_TEMPLATE, question=poll.question, options=options, poll_id=poll_id, error="You already voted!", navbar=render_navbar())
     if request.method == 'POST':
         option_id = request.form['vote']
         option = Option.query.get_or_404(option_id)
@@ -431,7 +428,7 @@ def vote(poll_id):
             db.session.add(vote)
             db.session.commit()
         return redirect(url_for('results', poll_id=poll_id))
-    return render_template_string(VOTE_TEMPLATE, question=poll.question, options=options, poll_id=poll_id, navbar=navbar)
+    return render_template_string(VOTE_TEMPLATE, question=poll.question, options=options, poll_id=poll_id, navbar=render_navbar())
 
 @app.route('/results/<poll_id>')
 def results(poll_id):
@@ -440,7 +437,6 @@ def results(poll_id):
         flash('This poll has expired!')
         return redirect(url_for('home'))
     options = poll.options
-    navbar = get_navbar(current_user.is_authenticated, current_user.username if current_user.is_authenticated else None)
     total_votes = sum(len(opt.votes) for opt in options)
     plt.figure(figsize=(6, 4))
     plt.bar([opt.text for opt in options], [len(opt.votes) for opt in options], color='#2563eb')
@@ -453,7 +449,7 @@ def results(poll_id):
     img.seek(0)
     chart_url = base64.b64encode(img.getvalue()).decode()
     plt.close()
-    return render_template_string(RESULTS_TEMPLATE, question=poll.question, total_votes=total_votes, chart=chart_url, options=options, poll_id=poll_id, navbar=navbar)
+    return render_template_string(RESULTS_TEMPLATE, question=poll.question, total_votes=total_votes, chart=chart_url, options=options, poll_id=poll_id, navbar=render_navbar())
 
 if __name__ == '__main__':
     app.run(debug=True)
