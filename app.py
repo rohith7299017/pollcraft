@@ -368,8 +368,9 @@ CREATE_BODY = '''
         <button type="button" id="add-option" class="mt-2 text-xs font-semibold" style="color: var(--teal-dark);">+ Add another option</button>
       </div>
       <div>
-        <label class="block text-sm font-medium mb-1">Expiration <span style="color: var(--muted); font-weight: 400;">(days from now, optional)</span></label>
-        <input name="expiration_days" type="number" min="0" class="field mt-1 block w-full rounded-md px-3 py-2" placeholder="e.g. 7">
+        <label class="block text-sm font-medium mb-1">Expiration <span style="color: var(--muted); font-weight: 400;">(days from now)</span></label>
+        <input name="expiration_days" type="number" min="0" class="field mt-1 block w-full rounded-md px-3 py-2" placeholder="Defaults to 2 days &mdash; enter 0 for no expiration">
+        <p class="text-xs mt-1" style="color: var(--muted);">Leave blank and the poll closes in 2 days. Enter 0 for a poll that never expires.</p>
       </div>
       <button type="submit" class="btn-primary w-full py-2 rounded-md">Create poll</button>
     </form>
@@ -548,10 +549,13 @@ def create_poll():
         if len(options) < 2:
             flash('Need at least 2 options!', 'error')
             return render('create', 'Create Poll', CREATE_BODY)
-        expiration_days = request.form.get('expiration_days')
-        expiration = None
-        if expiration_days and int(expiration_days) > 0:
-            expiration = datetime.utcnow() + timedelta(days=int(expiration_days))
+        expiration_days = request.form.get('expiration_days', '').strip()
+        if expiration_days == '':
+            # No expiration specified: default to 2 days.
+            expiration = datetime.utcnow() + timedelta(days=2)
+        else:
+            days = int(expiration_days)
+            expiration = datetime.utcnow() + timedelta(days=days) if days > 0 else None
         poll_id = str(uuid.uuid4())[:8]
         poll = Poll(id=poll_id, question=question, expiration_datetime=expiration, user_id=current_user.id)
         db.session.add(poll)
