@@ -60,6 +60,7 @@ class Poll(db.Model):
     id = db.Column(db.String(8), primary_key=True)
     question = db.Column(db.String(200), nullable=False)
     expiration_datetime = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
     user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
     options = db.relationship('Option', backref='poll', lazy=True, cascade='all, delete-orphan')
 
@@ -253,6 +254,7 @@ def nav_html(active):
       </a>
       <div class="space-x-4 text-sm font-medium">
         <a href="/" class="{cls('home')} hover:underline">Home</a>
+        <a href="/search" class="{cls('search')} hover:underline">Search</a>
         {auth_links}
       </div>
     </div>
@@ -304,6 +306,10 @@ HOME_BODY = '''
     <h2 class="text-3xl font-bold mb-1">Active Polls</h2>
     <p class="text-sm" style="color: var(--muted);">Cast a vote or start a poll of your own.</p>
   </div>
+  <form method="get" action="/search" class="max-w-md mx-auto flex gap-2 mb-8">
+    <input name="q" class="field block w-full rounded-md px-3 py-2" placeholder="Search polls by title...">
+    <button type="submit" class="btn-primary px-4 rounded-md whitespace-nowrap">Search</button>
+  </form>
   {{ flashes|safe }}
   {% if polls %}
     <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -486,9 +492,110 @@ RESULTS_BODY = '''
 </div>
 '''
 
+SEARCH_BODY = '''
+<div class="max-w-5xl mx-auto">
+  <div class="mb-6 text-center">
+    <h2 class="text-3xl font-bold mb-1">Search polls</h2>
+    <p class="text-sm" style="color: var(--muted);">Find a poll by title, or narrow down by date and status. No account needed.</p>
+  </div>
+  {{ flashes|safe }}
+
+  <form method="get" class="ticket p-5 pt-6 mb-8">
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium mb-1">Title contains</label>
+        <input name="q" value="{{ filters.q }}" class="field block w-full rounded-md px-3 py-2" placeholder="e.g. anime, lunch, roadmap">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Created from</label>
+        <input type="date" name="created_from" value="{{ filters.created_from }}" class="field block w-full rounded-md px-3 py-2">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Created to</label>
+        <input type="date" name="created_to" value="{{ filters.created_to }}" class="field block w-full rounded-md px-3 py-2">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Expires from</label>
+        <input type="date" name="expires_from" value="{{ filters.expires_from }}" class="field block w-full rounded-md px-3 py-2">
+      </div>
+      <div>
+        <label class="block text-sm font-medium mb-1">Expires to</label>
+        <input type="date" name="expires_to" value="{{ filters.expires_to }}" class="field block w-full rounded-md px-3 py-2">
+      </div>
+      <div class="md:col-span-2">
+        <label class="block text-sm font-medium mb-1">Status</label>
+        <select name="status" class="field block w-full rounded-md px-3 py-2">
+          <option value="all" {% if filters.status == 'all' %}selected{% endif %}>All polls</option>
+          <option value="active" {% if filters.status == 'active' %}selected{% endif %}>Active (not yet expired)</option>
+          <option value="expired" {% if filters.status == 'expired' %}selected{% endif %}>Expired</option>
+          <option value="none" {% if filters.status == 'none' %}selected{% endif %}>No expiration set</option>
+        </select>
+      </div>
+    </div>
+    <div class="flex gap-3 mt-4">
+      <button type="submit" class="btn-primary py-2 px-5 rounded-md">Search</button>
+      <a href="/search" class="py-2 px-5 rounded-md text-sm font-semibold self-center" style="color: var(--muted);">Clear filters</a>
+    </div>
+  </form>
+
+  {% if polls %}
+    <p class="text-sm mb-4" style="color: var(--muted);">{{ polls|length }} poll{{ 's' if polls|length != 1 else '' }} found</p>
+    <div class="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+      {% for poll in polls %}
+        <div class="ticket p-5 pt-6">
+          <div class="flex items-start justify-between gap-2 mb-3">
+            <h3 class="text-lg font-semibold leading-snug">{{ poll.question }}</h3>
+            {% if poll.expiration_datetime and poll.expiration_datetime < now %}
+              <span class="badge" style="background: rgba(216,80,63,0.12); color: var(--danger);">Expired</span>
+            {% elif poll.expiration_datetime %}
+              <span class="badge badge-live whitespace-nowrap">Active</span>
+            {% else %}
+              <span class="badge badge-none whitespace-nowrap">No expiry</span>
+            {% endif %}
+          </div>
+          <p class="text-xs mb-4" style="color: var(--muted);">
+            Created {{ poll.created_at.strftime('%b %d, %Y') }}
+            &middot; {% if poll.expiration_datetime %}Closes {{ poll.expiration_datetime.strftime('%b %d, %Y') }}{% else %}Never closes{% endif %}
+            &middot; {{ poll.options|length }} option{{ 's' if poll.options|length != 1 else '' }}
+          </p>
+          <div class="space-y-2 pt-2">
+            <a href="/poll/{{ poll.id }}" class="btn-primary block text-center py-2 rounded-md">Vote now</a>
+            <a href="/results/{{ poll.id }}" class="block text-center py-2 rounded-md" style="color: var(--teal-dark); font-weight: 600;">View results</a>
+            {% if current_user.is_authenticated and poll.user_id == current_user.id %}
+              <a href="/delete/{{ poll.id }}" class="block text-center text-xs" style="color: var(--danger);" onclick="return confirm('Delete this poll? This cannot be undone.');">Delete poll</a>
+            {% endif %}
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <div class="text-center py-16">
+      <div class="empty-illustration text-5xl mb-4">🔍</div>
+      <p class="text-lg font-medium mb-1">No polls match those filters</p>
+      <p class="text-sm" style="color: var(--muted);">Try broadening the date range or clearing a filter.</p>
+    </div>
+  {% endif %}
+</div>
+'''
+
 # Create tables
+def ensure_created_at_column():
+    """Existing deployments may already have a 'poll' table from before the
+    created_at column existed. db.create_all() only creates missing tables,
+    it never alters existing ones, so add the column by hand if needed."""
+    from sqlalchemy import text, inspect
+    inspector = inspect(db.engine)
+    if 'poll' not in inspector.get_table_names():
+        return
+    columns = [c['name'] for c in inspector.get_columns('poll')]
+    if 'created_at' not in columns:
+        with db.engine.begin() as conn:
+            conn.execute(text('ALTER TABLE poll ADD COLUMN created_at TIMESTAMP'))
+            conn.execute(text('UPDATE poll SET created_at = CURRENT_TIMESTAMP WHERE created_at IS NULL'))
+
 with app.app_context():
     db.create_all()
+    ensure_created_at_column()
 
 def render(active, title, body_template, **context):
     body = render_template_string(body_template, flashes=flashes_html(), **context)
@@ -502,6 +609,60 @@ def home():
         (Poll.expiration_datetime > datetime.utcnow())
     ).all()
     return render('home', 'Home', HOME_BODY, polls=polls)
+
+@app.route('/search', methods=['GET'])
+def search():
+    q = request.args.get('q', '').strip()
+    created_from = request.args.get('created_from', '').strip()
+    created_to = request.args.get('created_to', '').strip()
+    expires_from = request.args.get('expires_from', '').strip()
+    expires_to = request.args.get('expires_to', '').strip()
+    status = request.args.get('status', 'all').strip() or 'all'
+
+    def parse_date(value):
+        try:
+            return datetime.strptime(value, '%Y-%m-%d')
+        except ValueError:
+            return None
+
+    now = datetime.utcnow()
+    query = Poll.query
+
+    if q:
+        query = query.filter(Poll.question.ilike(f'%{q}%'))
+
+    cf = parse_date(created_from)
+    if cf:
+        query = query.filter(Poll.created_at >= cf)
+    ct = parse_date(created_to)
+    if ct:
+        query = query.filter(Poll.created_at < ct + timedelta(days=1))
+
+    ef = parse_date(expires_from)
+    if ef:
+        query = query.filter(Poll.expiration_datetime.isnot(None), Poll.expiration_datetime >= ef)
+    et = parse_date(expires_to)
+    if et:
+        query = query.filter(Poll.expiration_datetime.isnot(None), Poll.expiration_datetime < et + timedelta(days=1))
+
+    if status == 'active':
+        query = query.filter((Poll.expiration_datetime.is_(None)) | (Poll.expiration_datetime > now))
+    elif status == 'expired':
+        query = query.filter(Poll.expiration_datetime.isnot(None), Poll.expiration_datetime <= now)
+    elif status == 'none':
+        query = query.filter(Poll.expiration_datetime.is_(None))
+
+    polls = query.order_by(Poll.created_at.desc()).all()
+
+    filters = {
+        'q': q,
+        'created_from': created_from,
+        'created_to': created_to,
+        'expires_from': expires_from,
+        'expires_to': expires_to,
+        'status': status,
+    }
+    return render('search', 'Search', SEARCH_BODY, polls=polls, filters=filters, now=now)
 
 @app.route('/signup', methods=['GET', 'POST'])
 def signup():
